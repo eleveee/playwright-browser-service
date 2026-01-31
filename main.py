@@ -3,6 +3,8 @@ import base64
 from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+
+_browser_start_error: Optional[str] = None
 from pydantic import AnyHttpUrl, BaseModel, Field
 from playwright.async_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
@@ -67,7 +69,14 @@ class ExecuteRequest(BaseModel):
 
 @app.on_event("startup")
 async def _startup() -> None:
-    await browser_manager.start()
+    # Don't crash the whole app if Playwright/Chromium can't start.
+    # Surface the error via /health so we can debug on Zeabur.
+    global _browser_start_error
+    try:
+        await browser_manager.start()
+        _browser_start_error = None
+    except Exception as exc:
+        _browser_start_error = str(exc)
 
 
 @app.on_event("shutdown")
@@ -77,10 +86,13 @@ async def _shutdown() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {
+    payload = {
         "status": "ok",
         "browser": "available" if browser_manager.is_ready() else "unavailable",
     }
+    if _browser_start_error:
+        payload["browser_error"] = _browser_start_error
+    return payload
 
 
 @app.post("/screenshot", dependencies=[Depends(verify_token)])
