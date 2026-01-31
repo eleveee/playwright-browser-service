@@ -54,7 +54,6 @@ class BrowserManager:
         block_resources = _env_bool("BLOCK_RESOURCES", False)
         block_types = _parse_csv("BLOCK_RESOURCE_TYPES")
         if block_resources and not block_types:
-            # Default block resource types if block_resources is true but no types specified
             block_types = {"image", "media", "font"}
         allowed_hosts = _parse_csv("ALLOWED_HOSTS")
         return cls(
@@ -87,7 +86,7 @@ class BrowserManager:
 
     def is_url_allowed(self, url: str) -> bool:
         if not self.allowed_hosts:
-            return True  # Allow all if no whitelist
+            return True
 
         hostname = urlparse(url).hostname
         if not hostname:
@@ -96,7 +95,6 @@ class BrowserManager:
         for entry in self.allowed_hosts:
             entry = entry.lower()
             if entry.startswith("*."):
-                # wildcard subdomain match
                 if hostname == entry[2:] or hostname.endswith("." + entry[2:]):
                     return True
             elif hostname == entry:
@@ -104,16 +102,12 @@ class BrowserManager:
         return False
 
     @asynccontextmanager
-    async def page_context(
-        self,
-        *,
-        width: int,
-        height: int,
-    ):
+    async def page_context(self, *, width: int = 1280, height: int = 800):
         if not self.browser:
             raise BrowserUnavailableError("Browser is not started")
+
         context = await self.browser.new_context(viewport={"width": width, "height": height})
-        # Setup resource blocking if configured
+
         if self.block_resource_types:
 
             async def route_handler(route):
@@ -130,3 +124,6 @@ class BrowserManager:
             yield page
         finally:
             await context.close()
+
+
+browser_manager = BrowserManager.from_env()
